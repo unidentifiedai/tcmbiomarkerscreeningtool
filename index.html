@@ -3,12 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Symptom Scanner</title>
+    <title>TCM-based biomakers screening tool for tongue</title>
     <style>
         body { margin: 0; padding: 0; background-color: #000; color: #fff; font-family: -apple-system, sans-serif; overflow: hidden; }
         
         #app-container { 
-            position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; 
+            position: relative; width: 100vw; 
+            height: 100vh; /* Fallback for older browsers */
+            height: 100dvh; /* Dynamically adjusts for mobile URL/swipe bars */
+            display: flex; flex-direction: column; 
             justify-content: space-between; background-color: #0a0a0a; 
         }
         
@@ -23,10 +26,11 @@
         
         /* Interactive Info Panel */
         #info-panel { 
-            height: 45%; background: #1e1e24; z-index: 20; border-top-left-radius: 24px; 
+            height: 48%; /* Slightly taller for better readability */
+            background: #1e1e24; z-index: 20; border-top-left-radius: 24px; 
             border-top-right-radius: 24px; box-shadow: 0 -4px 20px rgba(0,0,0,0.6); 
-            padding: 24px; box-sizing: border-box; display: flex; flex-direction: column; 
-            overflow-y: auto; /* Allows scrolling if results are long */
+            padding: 20px 24px 30px 24px; /* Extra padding at bottom for iPhone swipe bar */
+            box-sizing: border-box; display: flex; flex-direction: column; 
         }
 
         /* State Panels (Hidden by default) */
@@ -34,22 +38,26 @@
         .active-state { display: flex; }
 
         /* Typography & Buttons */
-        h2 { margin: 0 0 10px 0; font-size: 1.8rem; color: #4CAF50; }
+        h2 { margin: 0 0 10px 0; font-size: 1.8rem; color: #4CAF50; flex-shrink: 0; }
         p { margin: 0 0 15px 0; font-size: 1.05rem; line-height: 1.5; color: #d1d1d1; }
         
         .primary-btn {
             background-color: #007bff; color: white; border: none; padding: 15px 30px; 
             font-size: 1.2rem; font-weight: bold; border-radius: 30px; cursor: pointer; 
             box-shadow: 0 4px 15px rgba(0, 123, 255, 0.4); transition: transform 0.1s;
-            width: 100%; max-width: 300px; margin-top: 10px;
+            width: 100%; max-width: 300px; margin-top: 10px; 
+            flex-shrink: 0; /* Prevents the button from being squished */
         }
         .primary-btn:active { transform: scale(0.96); }
-        .primary-btn:disabled { background-color: #555; cursor: not-allowed; box-shadow: none; }
 
         #timer-text { font-size: 3rem; font-weight: bold; color: #ff9800; margin: 10px 0; }
         
-        /* Results Styling */
-        #results-list { width: 100%; text-align: left; margin-bottom: 20px; }
+        /* Results Styling - Pinned Button Fix */
+        #results-list { 
+            width: 100%; text-align: left; margin-bottom: 15px; 
+            flex-grow: 1; overflow-y: auto; /* Only the text scrolls, not the button! */
+            padding-right: 5px; 
+        }
         .result-item { background: #2a2a35; padding: 15px; border-radius: 12px; margin-bottom: 15px; border-left: 5px solid #f44336; }
         .result-title { color: #f44336; font-size: 1.3rem; margin: 0 0 5px 0; font-weight: bold; }
         .result-def { font-size: 0.95rem; color: #ddd; margin: 0 0 8px 0; }
