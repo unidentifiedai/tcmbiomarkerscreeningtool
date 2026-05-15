@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TCM Biomarker SCreening Tool</title>
+    <style>
+        body { margin: 0; padding: 0; background-color: #000; color: #fff; font-family: -apple-system, sans-serif; overflow: hidden; }
+        #app-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between; /* Spaces out the camera and the info panel */
+            background-color: #0a0a0a;
+        }
+
+        /* This makes the camera a small, centered square */
+        #vision-container {
+            position: relative;
+            width: 90vw; /* Takes up 90% of a phone's screen width */
+            max-width: 350px; /* But stops growing at 350px on a computer */
+            aspect-ratio: 1 / 1; /* Forces it to always stay a perfect square */
+            margin: auto; 
+            border-radius: 16px; 
+            background: #111;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+            border: 2px solid #333;
+        }
+        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 10; pointer-events: none; }
+        #info-panel { height: 30%; background: #1e1e24; z-index: 20; border-top-left-radius: 20px; border-top-right-radius: 20px; box-shadow: 0 -4px 15px rgba(0,0,0,0.5); padding: 24px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; }
+        #status-indicator { font-size: 0.85rem; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+        #symptom-title { margin: 0 0 10px 0; font-size: 1.8rem; color: #4CAF50; }
+        #symptom-definition { margin: 0; font-size: 1.1rem; line-height: 1.5; color: #d1d1d1; }
+        .scanning-text { color: #ff9800 !important; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <div id="vision-container">
+        <video id="camera-feed" autoplay playsinline></video>
+        <canvas id="overlay-canvas"></canvas>
+    </div>
+
+    <div id="info-panel">
+        <div id="status-indicator">Status: Initializing AI...</div>
+        <h2 id="symptom-title" class="scanning-text">Please Wait</h2>
+        <p id="symptom-definition">Loading WebAssembly Model...</p>
+    </div>
+</div>
+
+<script>
+    var Module = {
+        onRuntimeInitialized: function() {
+            console.log("✅ WASM File Loaded and Ready!");
+            window.wasmReady = true;
+        }
+    };
+</script>
+<script src="edge-impulse-standalone.js"></script>
+<script src="run-impulse.js"></script>
+
+<script>
+    const symptomDictionary = {
+        "Crack": { title: "Crack Detected", definition: "[Cracks are grooves, clefts, or fissures present on the dorsal (top) surface of the tongue. Recommendation: The primary medical intervention is regaining glycemic control to halt excessive urination and subsequent dehydration. ]" },
+        "Thick Fur": { title: "Thick Fur Detected", definition: "[A thick fur means the underlying tongue body surface cannot be seen through it. Recommendation: Patients should undergo screening for glycemic control and metabolic syndrome.]" },
+        "Toothmark": { title: "Tooth Mark Detected", definition: "[Toothmarks are indentations or ridges found along the lateral margins of the tongue. Recommendation: Strict metabolic and weight management is required.]" },
+        "Ecchymosis": { title: "Ecchymosis Detected", definition: "[ Ecchymosis refers to bluish-purplish or dark-red spots (petechiae) and patches on the tongue body. Recommendation: Patients presenting with ecchymosis require immediate evaluation for chronic kidney disease (CKD) and cardiovascular disease (CVD) complications, as these are the primary risks associated with diabetic vascular damage (Młynarska et al., 2025)]" }
+    };
+
+    const DEBOUNCE_FRAMES = 5; 
+    let currentCandidate = null, consecutiveCount = 0, confirmedSymptom = null;
+
+    const video = document.getElementById('camera-feed');
+    const canvas = document.getElementById('overlay-canvas');
+    const ctx = canvas.getContext('2d');
+    const uiTitle = document.getElementById('symptom-title');
+    const uiDefinition = document.getElementById('symptom-definition');
+    const uiStatus = document.getElementById('status-indicator');
+
+    let classifier = null, modelProps = null;
+    const offscreenCanvas = document.createElement('canvas');
+    const offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
+
+    async function initAI() {
+        console.log("1. Booting up AI Interface...");
+        try {
+            classifier = new EdgeImpulseClassifier();
+            
+            console.log("2. Waiting for Classifier to Initialize...");
+            // Force initialization if the ready signal fired early
+            if (window.wasmReady && !classifier._initialized) {
+                console.log("↳ Bypassing wait, WASM already ready.");
+                if(Module.init) Module.init();
+                classifier._initialized = true;
+            } else {
+                await classifier.init();
+            }
+
+            console.log("3. Classifier Initialized! Getting Model Properties...");
+            modelProps = classifier.getProperties();
+            
+            offscreenCanvas.width = modelProps.input_width;
+            offscreenCanvas.height = modelProps.input_height;
+
+            uiTitle.innerText = "No Symptoms Detected";
+            uiDefinition.innerText = "Position the camera over the area of concern. The AI is analyzing the feed locally.";
+            uiStatus.innerText = "Status: Scanning...";
+
+            console.log("4. AI Ready. Starting Camera...");
+            initCamera();
+        } catch (err) {
+            console.error("❌ Failed to initialize classifier:", err);
+            uiTitle.innerText = "Screening Tool Load Error";
+            uiTitle.style.color = "red";
+            uiDefinition.innerText = "Check Console for details. Error: " + err.toString();
+        }
+    }
+
+    async function initCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: false
+            });
+            video.srcObject = stream;
+            video.onloadedmetadata = () => {
+                video.play();
+                resizeCanvas();
+                console.log("📷 Camera running. Starting Inference Loop!");
+                requestAnimationFrame(inferenceLoop);
+            };
+        } catch (error) {
+            console.error("❌ Camera access denied:", error);
+            uiTitle.innerText = "Camera Error";
+            uiTitle.style.color = "red";
+        }
+    }
+
+    function resizeCanvas() {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    function updatePatientUI(detectedClass) {
+        if (detectedClass === currentCandidate) { consecutiveCount++; } 
+        else { currentCandidate = detectedClass; consecutiveCount = 1; }
+
+        if (consecutiveCount >= DEBOUNCE_FRAMES && confirmedSymptom !== currentCandidate) {
+            confirmedSymptom = currentCandidate;
+            if (confirmedSymptom && symptomDictionary[confirmedSymptom]) {
+                uiTitle.innerText = symptomDictionary[confirmedSymptom].title;
+                uiTitle.classList.remove('scanning-text');
+                uiTitle.style.color = "#f44336"; 
+                uiDefinition.innerText = symptomDictionary[confirmedSymptom].definition;
+                uiStatus.innerText = "Status: Anomaly Identified";
+            } else {
+                uiTitle.innerText = "No Anomaly Detected";
+                uiTitle.classList.add('scanning-text');
+                uiTitle.style.color = ""; 
+                uiDefinition.innerText = "Position the camera over the area of concern. The AI is analyzing the feed locally.";
+                uiStatus.innerText = "Status: Scanning...";
+            }
+        }
+    }
+
+    function drawDetection(box) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!box) return;
+
+        const scaleX = canvas.width / modelProps.input_width;
+        const scaleY = canvas.height / modelProps.input_height;
+        const scaledX = box.x * scaleX, scaledY = box.y * scaleY;
+        const scaledWidth = box.width * scaleX, scaledHeight = box.height * scaleY;
+
+        ctx.strokeStyle = '#00FF00'; ctx.lineWidth = 4;
+        ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
+
+        const centerX = scaledX + (scaledWidth / 2), centerY = scaledY + (scaledHeight / 2);
+        ctx.fillStyle = '#FF0000'; ctx.beginPath(); ctx.arc(centerX, centerY, 6, 0, 2 * Math.PI); ctx.fill();
+
+        ctx.fillStyle = '#00FF00'; ctx.font = 'bold 24px Arial';
+        ctx.fillText(`${box.label} (${(box.value * 100).toFixed(0)}%)`, scaledX, scaledY - 10);
+    }
+
+    function inferenceLoop() {
+        if (!classifier || !modelProps) return requestAnimationFrame(inferenceLoop);
+
+        const minVideoDim = Math.min(video.videoWidth, video.videoHeight);
+        const sx = (video.videoWidth - minVideoDim) / 2;
+        const sy = (video.videoHeight - minVideoDim) / 2;
+        offscreenCtx.drawImage(video, sx, sy, minVideoDim, minVideoDim, 0, 0, modelProps.input_width, modelProps.input_height);
+        
+        const imgData = offscreenCtx.getImageData(0, 0, modelProps.input_width, modelProps.input_height);
+        let features = [];
+        for (let i = 0; i < imgData.data.length; i += 4) {
+            features.push((imgData.data[i] << 16) | (imgData.data[i+1] << 8) | imgData.data[i+2]);
+        }
+
+        try {
+            const res = classifier.classify(features);
+            let topResult = null;
+            if (res.results && res.results.length > 0) {
+                topResult = res.results.reduce((prev, current) => (prev.value > current.value) ? prev : current);
+                if (topResult.value < 0.6) topResult = null;
+            }
+
+            if (topResult) { drawDetection(topResult); updatePatientUI(topResult.label); } 
+            else { ctx.clearRect(0, 0, canvas.width, canvas.height); updatePatientUI(null); }
+        } catch (e) {
+            // Only log every 100 frames to prevent console flooding
+            if (Math.random() < 0.01) console.error("Classification error:", e);
+        }
+
+        requestAnimationFrame(inferenceLoop);
+    }
+
+    // Wait 1 second before starting to ensure files are read
+    setTimeout(initAI, 1000);
+
+</script>
+</body>
+</html>
