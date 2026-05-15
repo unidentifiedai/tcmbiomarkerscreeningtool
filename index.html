@@ -223,19 +223,27 @@
         }
     }
 
-    // --- 5. AI INITIALIZATION & CAMERA ---
+    // --- 5. AI INITIALIZATION & CAMERA (Updated for Mobile Debugging) ---
     async function initAI() {
+        const debugText = document.querySelector('#state-init p');
         try {
+            debugText.innerText = "1/4: Downloading AI Model (8MB)...";
             classifier = new EdgeImpulseClassifier();
+            
+            debugText.innerText = "2/4: Booting WebAssembly Engine...";
             if (window.wasmReady && !classifier._initialized) {
                 if(Module.init) Module.init();
                 classifier._initialized = true;
             } else {
                 await classifier.init();
             }
+            
+            debugText.innerText = "3/4: Reading Model Parameters...";
             modelProps = classifier.getProperties();
             offscreenCanvas.width = modelProps.input_width;
             offscreenCanvas.height = modelProps.input_height;
+            
+            debugText.innerText = "4/4: Requesting Camera Access...";
             initCamera();
         } catch (err) {
             console.error("AI Load Error:", err);
@@ -250,14 +258,18 @@
                 audio: false
             });
             video.srcObject = stream;
-            video.onloadedmetadata = () => {
-                video.play();
-                resizeCanvas();
-                switchState('IDLE'); // System is fully ready!
-                requestAnimationFrame(inferenceLoop);
+            video.onloadedmetadata = async () => {
+                try {
+                    await video.play(); // Await the play command to catch mobile blocks
+                    resizeCanvas();
+                    switchState('IDLE'); // System is fully ready!
+                    requestAnimationFrame(inferenceLoop);
+                } catch (playError) {
+                    panelInit.innerHTML = `<h2 style="color:red;">Playback Blocked</h2><p>Your browser blocked the camera from starting. Please ensure the video tag has 'muted' added to it.</p>`;
+                }
             };
         } catch (error) {
-            panelInit.innerHTML = `<h2 style="color:red;">Camera Denied</h2><p>Please grant camera permissions.</p>`;
+            panelInit.innerHTML = `<h2 style="color:red;">Camera Denied</h2><p>Please grant camera permissions. Error: ${error.name}</p>`;
         }
     }
 
