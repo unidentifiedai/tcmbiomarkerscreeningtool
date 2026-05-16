@@ -3,77 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI Symptom Scanner</title>
+    <title>TCM-based Anomaly Tongue Screening Tool</title>
     <style>
         body { margin: 0; padding: 0; background-color: #000; color: #fff; font-family: -apple-system, sans-serif; overflow: hidden; }
         
         #app-container { 
             position: relative; width: 100vw; 
-            height: 100vh; /* Fallback */
-            height: 100dvh; /* Mobile URL/Swipe bar fix */
+            height: 100vh; height: 100dvh; 
             display: flex; flex-direction: column; 
             justify-content: space-between; background-color: #0a0a0a; 
         }
         
-        /* Camera & Snapshot Container */
         #vision-container { 
             position: relative; width: 90vw; max-width: 350px; aspect-ratio: 1 / 1; 
             margin: auto; border-radius: 16px; background: #111; overflow: hidden; 
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8); border: 2px solid #333; 
         }
-        video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 10; pointer-events: none; }
+        video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+        canvas { z-index: 10; pointer-events: none; }
         
         #vision-snapshot {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            object-fit: cover; z-index: 20; display: none; background: #000;
+            object-fit: contain; z-index: 20; display: none; background: #000;
         }
 
-        /* Interactive Info Panel */
         #info-panel { 
-            height: 48%; 
-            background: #1e1e24; z-index: 30; border-top-left-radius: 24px; 
+            height: 48%; background: #1e1e24; z-index: 30; border-top-left-radius: 24px; 
             border-top-right-radius: 24px; box-shadow: 0 -4px 20px rgba(0,0,0,0.6); 
-            padding: 20px 24px 30px 24px; 
-            box-sizing: border-box; display: flex; flex-direction: column; 
+            padding: 20px 24px 30px 24px; box-sizing: border-box; display: flex; flex-direction: column; 
         }
 
-        /* State Panels */
         .panel-state { display: none; flex-direction: column; height: 100%; justify-content: center; align-items: center; text-align: center; }
         .active-state { display: flex; }
 
-        /* Typography & Buttons */
         h2 { margin: 0 0 10px 0; font-size: 1.8rem; color: #4CAF50; flex-shrink: 0; }
         p { margin: 0 0 15px 0; font-size: 1.05rem; line-height: 1.5; color: #d1d1d1; flex-shrink: 0; }
         
+        /* Updated Mobile-Friendly Button Styling */
         .primary-btn {
             background-color: #007bff; color: white; border: none; padding: 15px 30px; 
-            font-size: 1.2rem; font-weight: bold; border-radius: 30px; cursor: pointer; 
+            font-size: 1.15rem; font-weight: bold; border-radius: 30px; cursor: pointer; 
             box-shadow: 0 4px 15px rgba(0, 123, 255, 0.4); transition: transform 0.1s;
-            width: 100%; max-width: 300px; margin-top: 10px; flex-shrink: 0; 
+            width: 100%; max-width: 300px; margin: 6px auto; flex-shrink: 0; 
         }
         .primary-btn:active { transform: scale(0.96); }
 
         #scan-status { font-size: 1.4rem; font-weight: bold; color: #ff9800; margin: 10px 0; min-height: 30px; }
         
-        /* NEW: Dev Mode Styles */
-        .dev-toggle-container { margin-top: 20px; font-size: 0.9rem; color: #888; display: flex; align-items: center; gap: 8px; }
+        .dev-toggle-container { margin-top: 15px; font-size: 0.9rem; color: #888; display: flex; align-items: center; gap: 8px; }
         input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
         
         #dev-controls { display: none; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 10px; width: 100%; }
         .dev-btn { background: #00bcd4; color: #000; border: none; padding: 8px 12px; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
-        .dev-btn:active { transform: scale(0.95); }
-
-        /* Action Button Container */
-        .action-buttons { display: flex; flex-direction: column; gap: 10px; width: 100%; align-items: center; margin-bottom: 10px; }
-
-        /* Scrollable Results List */
-        #results-list { 
-            width: 100%; text-align: left; margin-bottom: 5px; 
-            flex-grow: 1; overflow-y: auto; 
-            padding-right: 5px; display: none; 
-        }
         
+        .action-buttons { display: flex; flex-direction: column; width: 100%; align-items: center; margin-bottom: 5px; }
+
+        #results-list { width: 100%; text-align: left; margin-bottom: 5px; flex-grow: 1; overflow-y: auto; padding-right: 5px; display: none; }
         #results-list::-webkit-scrollbar { width: 6px; }
         #results-list::-webkit-scrollbar-thumb { background: #555; border-radius: 10px; }
 
@@ -82,6 +67,8 @@
         .result-def { font-size: 0.95rem; color: #ddd; margin: 0 0 8px 0; }
         .result-rec { font-size: 0.95rem; color: #4CAF50; margin: 0; font-weight: bold; }
         .all-clear { color: #4CAF50 !important; }
+        
+        #scan-id-display { font-size: 0.9rem; color: #aaa; margin-bottom: 10px; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -102,38 +89,44 @@
 
         <div id="state-idle" class="panel-state">
             <h2>Ready to Scan</h2>
-            <p>Position the camera over the area of concern.</p>
-            <button class="primary-btn" onclick="startScreening()">Begin Screening</button>
+            <p style="margin-bottom: 5px;">Choose an input method below.</p>
+            
+            <button class="primary-btn" onclick="startScreening()">📸 Live Camera Scan</button>
+            <button class="primary-btn" onclick="document.getElementById('file-upload').click()" style="background-color: #9c27b0; box-shadow: 0 4px 15px rgba(156, 39, 176, 0.4);">📂 Upload Image</button>
+            <button class="primary-btn" onclick="downloadExcelLog()" style="background-color: #2e7d32; box-shadow: 0 4px 15px rgba(46, 125, 50, 0.4);">📊 Download Excel Log</button>
+            
+            <input type="file" id="file-upload" accept="image/*" style="display: none;">
             
             <label class="dev-toggle-container">
-                <input type="checkbox" id="dev-toggle"> ⚙️ Enable Developer Mock Mode
+                <input type="checkbox" id="dev-toggle"> ⚙️ Enable Developer Mode
             </label>
         </div>
 
         <div id="state-scanning" class="panel-state">
             <h2 style="color: #ff9800;">Scanning Active</h2>
-            <p>Analyzing surface. Move camera slowly.</p>
-            <div id="scan-status">Looking for symptoms...</div>
+            <div id="scan-id-display"></div>
+            <p>Analyzing surface data...</p>
+            <div id="scan-status">Looking for anomalies...</div>
 
             <div id="dev-controls">
-                <button class="dev-btn" onclick="injectMockSymptom('Crack')">+ Inject Crack</button>
-                <button class="dev-btn" onclick="injectMockSymptom('Thick Fur')">+ Inject Thick Fur</button>
-                <button class="dev-btn" onclick="injectMockSymptom('Tooth Mark')">+ Inject Tooth Mark</button>
-                <button class="dev-btn" onclick="injectMockSymptom('Ecchymosis')">+ Inject Ecchymosis</button>
+                <button class="dev-btn" onclick="injectMockSymptom('Crack')">+ Crack</button>
+                <button class="dev-btn" onclick="injectMockSymptom('Thick Fur')">+ Fur</button>
+                <button class="dev-btn" onclick="injectMockSymptom('Tooth Mark')">+ Bite</button>
+                <button class="dev-btn" onclick="injectMockSymptom('Ecchymosis')">+ Bruise</button>
             </div>
         </div>
 
         <div id="state-results" class="panel-state" style="justify-content: flex-start; width: 100%;">
             <h2 id="results-header">Screening Complete</h2>
+            <div id="result-id-display" style="font-family: monospace; color: #888; margin-bottom: 10px;"></div>
             
             <div class="action-buttons" id="action-buttons-container">
-                <button id="btn-view-report" class="primary-btn" onclick="showReport()" style="background-color: #ff9800; margin: 0;">📄 View Symptom Report</button>
-                <button id="btn-save-image" class="primary-btn" onclick="downloadSnapshot()" style="background-color: #4CAF50; margin: 0;">💾 Save Image & Finish</button>
-                <button id="btn-discard" class="primary-btn" onclick="resetToIdle()" style="background-color: #333; margin: 0; font-size: 1rem; padding: 10px;">Discard & Scan Again</button>
+                <button id="btn-view-report" class="primary-btn" onclick="showReport()" style="background-color: #ff9800; box-shadow: 0 4px 15px rgba(255, 152, 0, 0.4);">📄 View Symptom Report</button>
+                <button id="btn-save-image" class="primary-btn" onclick="downloadSnapshot()" style="background-color: #4CAF50; box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);">💾 Save Image & Log Result</button>
+                <button id="btn-discard" class="primary-btn" onclick="resetToIdle()" style="background-color: #333; box-shadow: 0 4px 15px rgba(51, 51, 51, 0.4);">Discard & Scan Again</button>
             </div>
 
-            <div id="results-list">
-                </div>
+            <div id="results-list"></div>
         </div>
 
     </div>
@@ -150,7 +143,7 @@
     const symptomDictionary = {
         "Crack": { 
             title: "Fissure / Crack Detected", 
-            definition: "Visible fissures or deep grooves on the tongue's mucosal surface. In TCM, this can indicate metabolic heat or fluid depletion.",
+            definition: "Visible fissures or deep grooves on the tongue's mucosal surface. Clinical literature associates this with metabolic heat or fluid depletion.",
             recommendation: "Anomaly flagged. Please consult a healthcare professional or TCM practitioner for a clinical evaluation."
         },
         "Thick Fur": { 
@@ -158,9 +151,9 @@
             definition: "A heavy, dense white or yellowish microbial coating on the tongue. Frequently associated in clinical literature with metabolic syndrome or digestive distress.",
             recommendation: "Anomaly flagged. Please consult a healthcare professional or TCM practitioner for a clinical evaluation."
         },
-        "Toothmark": { 
+        "Tooth Mark": { 
             title: "Toothmark (Scalloped Edge) Detected", 
-            definition: "Wavy indentations along the lateral borders of the tongue, typically caused by tongue swelling pressing against the teeth.",
+            definition: "Wavy indentations along the lateral borders of the tongue, typically caused by tongue swelling pressing against the teeth over time.",
             recommendation: "Anomaly flagged. Please consult a healthcare professional or TCM practitioner for a clinical evaluation."
         },
         "Ecchymosis": { 
@@ -170,18 +163,21 @@
         }
     };
 
-    // --- 2. DYNAMIC APP STATE VARIABLES ---
+    // --- 2. DYNAMIC APP STATE & DATABASES ---
     let currentAppState = 'INIT'; 
     let recordedSymptoms = new Set(); 
     let symptomFrames = {};           
     let lastSnapshotURL = null; 
+    let isLiveScanning = false; 
     
     let inactivityTimer = null;
     let secondsSinceLastFind = 0;
     const AUTO_STOP_SECONDS = 4;      
     const CONFIRMATION_FRAMES = 10;   
 
-    // DOM Elements
+    let currentScanID = "";
+    let sessionHistory = []; 
+
     const video = document.getElementById('camera-feed');
     const canvas = document.getElementById('overlay-canvas');
     const ctx = canvas.getContext('2d');
@@ -195,7 +191,6 @@
     const resultsList = document.getElementById('results-list');
     const resultsHeader = document.getElementById('results-header');
     
-    // Dev Elements
     const devToggle = document.getElementById('dev-toggle');
     const devControls = document.getElementById('dev-controls');
 
@@ -203,7 +198,7 @@
     const offscreenCanvas = document.createElement('canvas');
     const offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
 
-    // --- 3. UI STATE MANAGEMENT ---
+    // --- 3. STATE MANAGEMENT ---
     function switchState(newState) {
         currentAppState = newState;
         document.querySelectorAll('.panel-state').forEach(p => p.classList.remove('active-state'));
@@ -213,7 +208,10 @@
         if(newState === 'SCANNING') panelScanning.classList.add('active-state');
         if(newState === 'RESULTS') panelResults.classList.add('active-state');
         
-        if(newState !== 'SCANNING') ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if(newState !== 'SCANNING') {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            isLiveScanning = false; 
+        }
 
         if (newState === 'RESULTS' && lastSnapshotURL) {
             visionSnapshot.src = lastSnapshotURL;
@@ -225,24 +223,25 @@
 
     function resetToIdle() {
         switchState('IDLE');
+        document.getElementById('file-upload').value = ''; 
     }
 
-    // --- 4. SMART SCREENING LOGIC ---
+    // --- 4. SMART SCREENING LOGIC (LIVE CAMERA) ---
     function startScreening() {
         switchState('SCANNING');
+        isLiveScanning = true;
         recordedSymptoms.clear();
         symptomFrames = {}; 
         lastSnapshotURL = null; 
         secondsSinceLastFind = 0;
+        
+        currentScanID = "LIVE-" + Math.random().toString(36).substr(2, 5).toUpperCase();
+        document.getElementById('scan-id-display').innerText = `ID: ${currentScanID}`;
         scanStatus.innerText = "Looking for anomalies...";
         scanStatus.style.color = "#ff9800";
 
-        // Show/Hide the Developer Mock buttons based on the checkbox
-        if (devToggle.checked) {
-            devControls.style.display = 'flex';
-        } else {
-            devControls.style.display = 'none';
-        }
+        if (devToggle.checked) devControls.style.display = 'flex';
+        else devControls.style.display = 'none';
 
         inactivityTimer = setInterval(() => {
             secondsSinceLastFind++;
@@ -253,23 +252,96 @@
         }, 1000);
     }
 
-    // NEW FUNCTION: Developer Mock Injection
     function injectMockSymptom(label) {
         if (currentAppState !== 'SCANNING') return;
-        
         if (!recordedSymptoms.has(label)) {
             recordedSymptoms.add(label);
-            captureSnapshot(); // Takes a real snapshot of whatever the camera is currently seeing
-            secondsSinceLastFind = 0; // Resets the 4-second auto-stop timer
-            
+            captureSnapshot(); 
+            secondsSinceLastFind = 0; 
             scanStatus.innerText = `[DEV MOCK] Logged: ${label}`;
-            scanStatus.style.color = "#00bcd4"; // Cyan color to clearly indicate it was faked
+            scanStatus.style.color = "#00bcd4"; 
         }
     }
 
+    // --- 4.5 IMAGE UPLOAD LOGIC ---
+    document.getElementById('file-upload').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        switchState('SCANNING');
+        scanStatus.innerText = "Analyzing uploaded image...";
+        currentScanID = "UPLD-" + Math.random().toString(36).substr(2, 5).toUpperCase();
+        document.getElementById('scan-id-display').innerText = `ID: ${currentScanID}`;
+        devControls.style.display = 'none';
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = function() {
+                processUploadedImage(img);
+            }
+            img.src = event.target.result;
+        }
+        reader.readAsDataURL(file);
+    });
+
+    function processUploadedImage(img) {
+        recordedSymptoms.clear();
+        
+        offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+        const minDim = Math.min(img.width, img.height);
+        const sx = (img.width - minDim) / 2;
+        const sy = (img.height - minDim) / 2;
+        offscreenCtx.drawImage(img, sx, sy, minDim, minDim, 0, 0, modelProps.input_width, modelProps.input_height);
+
+        const imgData = offscreenCtx.getImageData(0, 0, modelProps.input_width, modelProps.input_height);
+        let features = [];
+        for (let i = 0; i < imgData.data.length; i += 4) {
+            features.push((imgData.data[i] << 16) | (imgData.data[i+1] << 8) | imgData.data[i+2]);
+        }
+
+        try {
+            const res = classifier.classify(features);
+            
+            const snapCanvas = document.createElement('canvas');
+            snapCanvas.width = img.width;
+            snapCanvas.height = img.height;
+            const snapCtx = snapCanvas.getContext('2d');
+            snapCtx.drawImage(img, 0, 0);
+
+            if (res.results && res.results.length > 0) {
+                const topResult = res.results.reduce((prev, current) => (prev.value > current.value) ? prev : current);
+                
+                if (topResult.value >= 0.5) {
+                    recordedSymptoms.add(topResult.label);
+
+                    const scaleX = snapCanvas.width / modelProps.input_width;
+                    const scaleY = snapCanvas.height / modelProps.input_height;
+                    const scaledX = topResult.x * scaleX;
+                    const scaledY = topResult.y * scaleY;
+
+                    snapCtx.strokeStyle = '#00FF00'; snapCtx.lineWidth = Math.max(4, snapCanvas.width/100);
+                    snapCtx.strokeRect(scaledX, scaledY, topResult.width * scaleX, topResult.height * scaleY);
+                    snapCtx.fillStyle = '#00FF00'; snapCtx.font = `bold ${Math.max(20, snapCanvas.width/20)}px Arial`;
+                    snapCtx.fillText(topResult.label, scaledX, scaledY - 10);
+                }
+            }
+
+            lastSnapshotURL = snapCanvas.toDataURL('image/jpeg', 0.9);
+            finishScreening(); 
+
+        } catch (e) {
+            console.error(e);
+            alert("Error processing image.");
+            resetToIdle();
+        }
+    }
+
+    // --- RESULTS HANDLING ---
     function finishScreening() {
         switchState('RESULTS'); 
         
+        document.getElementById('result-id-display').innerText = `Record ID: ${currentScanID}`;
         resultsList.innerHTML = ''; 
         resultsList.style.display = 'none'; 
         
@@ -281,14 +353,13 @@
             resultsHeader.innerText = "No Anomalies Detected";
             resultsHeader.className = "all-clear";
             resultsHeader.style.color = "#4CAF50";
-            resultsList.innerHTML = `<p style="text-align:center;">The AI did not detect any concerning markers during the scan.</p>`;
-            
+            resultsList.innerHTML = `<p style="text-align:center;">The AI did not detect any concerning markers.</p>`;
             resultsList.style.display = 'block'; 
             btnView.style.display = 'none';
             btnSave.style.display = 'none';
             btnDiscard.innerText = "Start New Scan";
         } else {
-            resultsHeader.innerText = "Anomalies Identified";
+            resultsHeader.innerText = "Anomaly Identified";
             resultsHeader.className = "";
             resultsHeader.style.color = "#f44336";
             
@@ -297,33 +368,18 @@
             btnDiscard.innerText = "Discard & Scan Again";
             
             recordedSymptoms.forEach(symptomKey => {
-                const data = symptomDictionary[symptomKey] || {
-                    title: `Detected: "${symptomKey}"`,
-                    definition: "The AI found this symptom, but its exact spelling is missing from your dictionary.",
-                    recommendation: `Update your code to include exactly: "${symptomKey}"`
-                };
-                
-                const html = `
-                    <div class="result-item">
-                        <h3 class="result-title">${data.title}</h3>
-                        <p class="result-def">${data.definition}</p>
-                        <p class="result-rec">Rec: ${data.recommendation}</p>
-                    </div>
-                `;
-                resultsList.innerHTML += html;
+                const data = symptomDictionary[symptomKey] || { title: `Detected: "${symptomKey}"`, definition: "Spelling missing from dictionary.", recommendation: "Update code." };
+                resultsList.innerHTML += `<div class="result-item"><h3 class="result-title">${data.title}</h3><p class="result-def">${data.definition}</p><p class="result-rec">Rec: ${data.recommendation}</p></div>`;
             });
         }
     }
 
     function showReport() {
-        const resultsList = document.getElementById('results-list');
-        const btnView = document.getElementById('btn-view-report');
-        
-        resultsList.style.display = 'block'; 
-        btnView.style.display = 'none';    
+        document.getElementById('results-list').style.display = 'block'; 
+        document.getElementById('btn-view-report').style.display = 'none';    
     }
 
-    // --- 5. SNAPSHOT LOGIC ---
+    // --- 5. IMAGE SAVING & EXCEL LOGGING ---
     function captureSnapshot() {
         const snapCanvas = document.createElement('canvas');
         snapCanvas.width = video.videoWidth;
@@ -342,85 +398,90 @@
 
     function downloadSnapshot() {
         if (!lastSnapshotURL) return;
+        
         const link = document.createElement('a');
         link.href = lastSnapshotURL;
-        link.download = `Scan_Result_${new Date().getTime()}.jpg`; 
+        link.download = `${currentScanID}.jpg`; 
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         
-        setTimeout(() => {
-            resetToIdle();
-        }, 1500);
+        const now = new Date();
+        const dateStr = now.toLocaleDateString();
+        const timeStr = now.toLocaleTimeString();
+        const symptomArray = Array.from(recordedSymptoms).join(" + "); 
+        
+        sessionHistory.push({
+            id: currentScanID,
+            date: dateStr,
+            time: timeStr,
+            symptoms: symptomArray
+        });
+        
+        setTimeout(() => resetToIdle(), 1500);
     }
 
-    // --- 6. AI INITIALIZATION & CAMERA ---
+    function downloadExcelLog() {
+        if (sessionHistory.length === 0) {
+            alert("Your log is empty! Save an image result first.");
+            return;
+        }
+
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "Scan ID,Date,Time,Anomaly Detected\n";
+
+        sessionHistory.forEach(record => {
+            csvContent += `${record.id},${record.date},${record.time},"${record.symptoms}"\n`;
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `Medical_Log_${new Date().getTime()}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    // --- 6. AI INITIALIZATION & INFERENCE ---
     async function initAI() {
         const debugText = document.querySelector('#state-init p');
         try {
             debugText.innerText = "Downloading AI Model...";
             classifier = new EdgeImpulseClassifier();
-            
-            if (window.wasmReady && !classifier._initialized) {
-                if(Module.init) Module.init();
-                classifier._initialized = true;
-            } else {
-                await classifier.init();
-            }
-            
+            if (window.wasmReady && !classifier._initialized) { if(Module.init) Module.init(); classifier._initialized = true; } 
+            else { await classifier.init(); }
             modelProps = classifier.getProperties();
-            offscreenCanvas.width = modelProps.input_width;
-            offscreenCanvas.height = modelProps.input_height;
-            
+            offscreenCanvas.width = modelProps.input_width; offscreenCanvas.height = modelProps.input_height;
             initCamera();
-        } catch (err) {
-            panelInit.innerHTML = `<h2 style="color:red;">Error</h2><p>${err}</p>`;
-        }
+        } catch (err) { panelInit.innerHTML = `<h2 style="color:red;">Error</h2><p>${err}</p>`; }
     }
 
     async function initCamera() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-                audio: false
-            });
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
             video.srcObject = stream;
             video.onloadedmetadata = async () => {
-                try {
-                    await video.play(); 
-                    resizeCanvas();
-                    switchState('IDLE'); 
-                    requestAnimationFrame(inferenceLoop);
-                } catch (playError) {
-                    panelInit.innerHTML = `<h2 style="color:red;">Playback Blocked</h2><p>Browser blocked camera.</p>`;
-                }
+                try { await video.play(); resizeCanvas(); switchState('IDLE'); requestAnimationFrame(inferenceLoop); } 
+                catch (e) { panelInit.innerHTML = `<h2 style="color:red;">Playback Blocked</h2>`; }
             };
-        } catch (error) {
-            panelInit.innerHTML = `<h2 style="color:red;">Camera Denied</h2><p>Please grant camera permissions.</p>`;
-        }
+        } catch (err) { panelInit.innerHTML = `<h2 style="color:red;">Camera Denied</h2>`; }
     }
 
-    function resizeCanvas() {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-    }
+    function resizeCanvas() { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
     window.addEventListener('resize', resizeCanvas);
 
-    // --- 7. INFERENCE & SMART TRACKING ---
     function inferenceLoop() {
         if (!classifier || !modelProps) return requestAnimationFrame(inferenceLoop);
 
-        if (currentAppState === 'SCANNING') {
+        if (currentAppState === 'SCANNING' && isLiveScanning) {
             const minVid = Math.min(video.videoWidth, video.videoHeight);
-            const sx = (video.videoWidth - minVid) / 2;
-            const sy = (video.videoHeight - minVid) / 2;
+            const sx = (video.videoWidth - minVid) / 2; const sy = (video.videoHeight - minVid) / 2;
             offscreenCtx.drawImage(video, sx, sy, minVid, minVid, 0, 0, modelProps.input_width, modelProps.input_height);
             
             const imgData = offscreenCtx.getImageData(0, 0, modelProps.input_width, modelProps.input_height);
             let features = [];
-            for (let i = 0; i < imgData.data.length; i += 4) {
-                features.push((imgData.data[i] << 16) | (imgData.data[i+1] << 8) | imgData.data[i+2]);
-            }
+            for (let i = 0; i < imgData.data.length; i += 4) features.push((imgData.data[i] << 16) | (imgData.data[i+1] << 8) | imgData.data[i+2]);
 
             try {
                 const res = classifier.classify(features);
@@ -436,10 +497,8 @@
                 if (topResult) { 
                     const scaleX = canvas.width / modelProps.input_width, scaleY = canvas.height / modelProps.input_height;
                     const scaledX = topResult.x * scaleX, scaledY = topResult.y * scaleY;
-                    const scaledWidth = topResult.width * scaleX, scaledHeight = topResult.height * scaleY;
-
                     ctx.strokeStyle = '#00FF00'; ctx.lineWidth = 4;
-                    ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
+                    ctx.strokeRect(scaledX, scaledY, topResult.width * scaleX, topResult.height * scaleY);
                     ctx.fillStyle = '#00FF00'; ctx.font = 'bold 24px Arial';
                     ctx.fillText(topResult.label, scaledX, scaledY - 10);
 
@@ -448,25 +507,18 @@
                     if (symptomFrames[topResult.label] === CONFIRMATION_FRAMES) {
                         if (!recordedSymptoms.has(topResult.label)) {
                             recordedSymptoms.add(topResult.label);
-                            
                             captureSnapshot(); 
                             secondsSinceLastFind = 0; 
-                            
                             scanStatus.innerText = `Logged: ${topResult.label}`;
                             scanStatus.style.color = "#4CAF50"; 
                         }
                     }
                 }
-            } catch (e) {
-                if (Math.random() < 0.01) console.error(e);
-            }
+            } catch (e) { }
         }
-
         requestAnimationFrame(inferenceLoop);
     }
-
     setTimeout(initAI, 1000);
-
 </script>
 </body>
 </html>
