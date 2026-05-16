@@ -359,7 +359,7 @@
             btnSave.style.display = 'none';
             btnDiscard.innerText = "Start New Scan";
         } else {
-            resultsHeader.innerText = "Anomaly Identified";
+            resultsHeader.innerText = "Anomal Identified";
             resultsHeader.className = "";
             resultsHeader.style.color = "#f44336";
             
@@ -428,7 +428,7 @@
         }
 
         let csvContent = "data:text/csv;charset=utf-8,";
-        csvContent += "Scan ID,Date,Time,Anomaly Detected\n";
+        csvContent += "Scan ID,Date,Time,Symptoms Detected\n";
 
         sessionHistory.forEach(record => {
             csvContent += `${record.id},${record.date},${record.time},"${record.symptoms}"\n`;
