@@ -10,7 +10,7 @@
         #app-container { 
             position: relative; width: 100vw; 
             height: 100vh; /* Fallback */
-            height: 100dvh; /* Mobile URL bar fix */
+            height: 100dvh; /* Mobile URL/Swipe bar fix */
             display: flex; flex-direction: column; 
             justify-content: space-between; background-color: #0a0a0a; 
         }
@@ -54,11 +54,10 @@
         /* Scrollable Results List */
         #results-list { 
             width: 100%; text-align: left; margin-bottom: 15px; 
-            flex-grow: 1; overflow-y: auto; /* Enables vertical scrolling */
+            flex-grow: 1; overflow-y: auto; 
             padding-right: 5px; 
         }
         
-        /* Customizing the scrollbar for mobile sleekness */
         #results-list::-webkit-scrollbar { width: 6px; }
         #results-list::-webkit-scrollbar-thumb { background: #555; border-radius: 10px; }
 
@@ -100,8 +99,8 @@
             <h2 id="results-header">Screening Complete</h2>
             
             <img id="snapshot-preview" style="width: 100%; border-radius: 12px; margin-bottom: 15px; display: none; border: 2px solid #333;" />
-            <button id="btn-save-image" class="primary-btn" onclick="downloadSnapshot()" style="background-color: #4CAF50; display: none; margin-top: 0;">💾 Save Scan Image</button>
-            
+            <button id="btn-save-image" class="primary-btn" onclick="downloadSnapshot()" style="background-color: #4CAF50; display: none; margin-top: 0; margin-bottom: 15px;">💾 Save Scan Image</button>
+
             <div id="results-list">
                 </div>
             <button class="primary-btn" onclick="resetToIdle()" style="background-color: #333;">Start New Scan</button>
@@ -129,8 +128,8 @@
             definition: "Dense hair accumulation noted in the scanned area.",
             recommendation: "Ensure area is clean. May require trimming for better visibility of underlying skin."
         },
-        "Toothmark": { 
-            title: "Toothmark Detected", 
+        "Tooth Mark": { 
+            title: "Tooth Mark Detected", 
             definition: "Surface indentation or puncture consistent with a bite.",
             recommendation: "Clean area with antiseptic. Monitor closely for signs of infection."
         },
@@ -143,14 +142,14 @@
 
     // --- 2. DYNAMIC APP STATE VARIABLES ---
     let currentAppState = 'INIT'; 
-    let recordedSymptoms = new Set(); // Final confirmed list
-    let symptomFrames = {};           // Tracks how many times a symptom was seen
+    let recordedSymptoms = new Set(); 
+    let symptomFrames = {};           
+    let lastSnapshotURL = null; // Stores the captured image
     
-    // Auto-Stop Timer Variables
     let inactivityTimer = null;
     let secondsSinceLastFind = 0;
-    const AUTO_STOP_SECONDS = 4;      // Stop scan if 4 seconds pass with no new discoveries
-    const CONFIRMATION_FRAMES = 10;   // Requires 10 total frames to confirm a symptom
+    const AUTO_STOP_SECONDS = 4;      
+    const CONFIRMATION_FRAMES = 10;   
 
     // DOM Elements
     const video = document.getElementById('camera-feed');
@@ -190,16 +189,14 @@
     function startScreening() {
         switchState('SCANNING');
         recordedSymptoms.clear();
-        symptomFrames = {}; // Reset frame counts
+        symptomFrames = {}; 
+        lastSnapshotURL = null; 
         secondsSinceLastFind = 0;
         scanStatus.innerText = "Looking for anomalies...";
         scanStatus.style.color = "#ff9800";
 
-        // The Auto-Stop Inactivity Timer
         inactivityTimer = setInterval(() => {
             secondsSinceLastFind++;
-            
-            // If we go 4 seconds without finding anything NEW, end the scan
             if (secondsSinceLastFind >= AUTO_STOP_SECONDS) {
                 clearInterval(inactivityTimer);
                 finishScreening();
@@ -210,32 +207,72 @@
     function finishScreening() {
         switchState('RESULTS');
         resultsList.innerHTML = ''; 
+        
+        const previewImg = document.getElementById('snapshot-preview');
+        const saveBtn = document.getElementById('btn-save-image');
 
         if (recordedSymptoms.size === 0) {
             resultsHeader.innerText = "No Anomalies Detected";
             resultsHeader.className = "all-clear";
+            resultsHeader.style.color = "#4CAF50";
             resultsList.innerHTML = `<p style="text-align:center;">The AI did not detect any concerning markers during the scan.</p>`;
+            
+            previewImg.style.display = 'none';
+            saveBtn.style.display = 'none';
         } else {
             resultsHeader.innerText = "Anomalies Identified";
             resultsHeader.className = "";
+            resultsHeader.style.color = "#f44336";
+            
+            if (lastSnapshotURL) {
+                previewImg.src = lastSnapshotURL;
+                previewImg.style.display = 'block';
+                saveBtn.style.display = 'block';
+            }
             
             recordedSymptoms.forEach(symptomKey => {
-                const data = symptomDictionary[symptomKey];
-                if(data) {
-                    const html = `
-                        <div class="result-item">
-                            <h3 class="result-title">${data.title}</h3>
-                            <p class="result-def">${data.definition}</p>
-                            <p class="result-rec">Rec: ${data.recommendation}</p>
-                        </div>
-                    `;
-                    resultsList.innerHTML += html;
-                }
+                const data = symptomDictionary[symptomKey] || {
+                    title: `Detected: "${symptomKey}"`,
+                    definition: "The AI found this symptom, but its exact spelling is missing from your symptomDictionary.",
+                    recommendation: `Update your code to include exactly: "${symptomKey}"`
+                };
+                
+                const html = `
+                    <div class="result-item">
+                        <h3 class="result-title">${data.title}</h3>
+                        <p class="result-def">${data.definition}</p>
+                        <p class="result-rec">Rec: ${data.recommendation}</p>
+                    </div>
+                `;
+                resultsList.innerHTML += html;
             });
         }
     }
 
-    // --- 5. AI INITIALIZATION & CAMERA ---
+    // --- 5. SNAPSHOT LOGIC ---
+    function captureSnapshot() {
+        const snapCanvas = document.createElement('canvas');
+        snapCanvas.width = video.videoWidth;
+        snapCanvas.height = video.videoHeight;
+        const snapCtx = snapCanvas.getContext('2d');
+        
+        snapCtx.drawImage(video, 0, 0, snapCanvas.width, snapCanvas.height);
+        snapCtx.drawImage(canvas, 0, 0, snapCanvas.width, snapCanvas.height);
+        
+        lastSnapshotURL = snapCanvas.toDataURL('image/jpeg', 0.9);
+    }
+
+    function downloadSnapshot() {
+        if (!lastSnapshotURL) return;
+        const link = document.createElement('a');
+        link.href = lastSnapshotURL;
+        link.download = `Scan_Result_${new Date().getTime()}.jpg`; 
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    // --- 6. AI INITIALIZATION & CAMERA ---
     async function initAI() {
         const debugText = document.querySelector('#state-init p');
         try {
@@ -287,7 +324,7 @@
     }
     window.addEventListener('resize', resizeCanvas);
 
-    // --- 6. INFERENCE & SMART TRACKING ---
+    // --- 7. INFERENCE & SMART TRACKING ---
     function inferenceLoop() {
         if (!classifier || !modelProps) return requestAnimationFrame(inferenceLoop);
 
@@ -315,7 +352,6 @@
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
                 if (topResult) { 
-                    // Draw bounding box
                     const scaleX = canvas.width / modelProps.input_width, scaleY = canvas.height / modelProps.input_height;
                     const scaledX = topResult.x * scaleX, scaledY = topResult.y * scaleY;
                     const scaledWidth = topResult.width * scaleX, scaledHeight = topResult.height * scaleY;
@@ -325,18 +361,15 @@
                     ctx.fillStyle = '#00FF00'; ctx.font = 'bold 24px Arial';
                     ctx.fillText(topResult.label, scaledX, scaledY - 10);
 
-                    // SMART LOGIC: Add to total frame count for this specific symptom
                     symptomFrames[topResult.label] = (symptomFrames[topResult.label] || 0) + 1;
 
-                    // If it hits the required frame count (e.g., 10 frames), officially record it
                     if (symptomFrames[topResult.label] === CONFIRMATION_FRAMES) {
                         if (!recordedSymptoms.has(topResult.label)) {
                             recordedSymptoms.add(topResult.label);
                             
-                            // RESET THE AUTO-STOP TIMER because we found something new!
+                            captureSnapshot(); 
                             secondsSinceLastFind = 0; 
                             
-                            // Update UI to let user know it was captured
                             scanStatus.innerText = `Logged: ${topResult.label}`;
                             scanStatus.style.color = "#4CAF50"; 
                         }
