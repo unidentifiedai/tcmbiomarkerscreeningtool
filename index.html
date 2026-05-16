@@ -24,7 +24,6 @@
         video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 10; pointer-events: none; }
         
-        /* NEW: The Snapshot Overlay that hides the live feed */
         #vision-snapshot {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
             object-fit: cover; z-index: 20; display: none; background: #000;
@@ -57,6 +56,14 @@
 
         #scan-status { font-size: 1.4rem; font-weight: bold; color: #ff9800; margin: 10px 0; min-height: 30px; }
         
+        /* NEW: Dev Mode Styles */
+        .dev-toggle-container { margin-top: 20px; font-size: 0.9rem; color: #888; display: flex; align-items: center; gap: 8px; }
+        input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+        
+        #dev-controls { display: none; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 10px; width: 100%; }
+        .dev-btn { background: #00bcd4; color: #000; border: none; padding: 8px 12px; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
+        .dev-btn:active { transform: scale(0.95); }
+
         /* Action Button Container */
         .action-buttons { display: flex; flex-direction: column; gap: 10px; width: 100%; align-items: center; margin-bottom: 10px; }
 
@@ -64,7 +71,7 @@
         #results-list { 
             width: 100%; text-align: left; margin-bottom: 5px; 
             flex-grow: 1; overflow-y: auto; 
-            padding-right: 5px; display: none; /* Hidden by default */
+            padding-right: 5px; display: none; 
         }
         
         #results-list::-webkit-scrollbar { width: 6px; }
@@ -97,12 +104,23 @@
             <h2>Ready to Scan</h2>
             <p>Position the camera over the area of concern.</p>
             <button class="primary-btn" onclick="startScreening()">Begin Screening</button>
+            
+            <label class="dev-toggle-container">
+                <input type="checkbox" id="dev-toggle"> ⚙️ Enable Developer Mock Mode
+            </label>
         </div>
 
         <div id="state-scanning" class="panel-state">
             <h2 style="color: #ff9800;">Scanning Active</h2>
             <p>Analyzing surface. Move camera slowly.</p>
             <div id="scan-status">Looking for symptoms...</div>
+
+            <div id="dev-controls">
+                <button class="dev-btn" onclick="injectMockSymptom('Crack')">+ Inject Crack</button>
+                <button class="dev-btn" onclick="injectMockSymptom('Thick Fur')">+ Inject Thick Fur</button>
+                <button class="dev-btn" onclick="injectMockSymptom('Tooth Mark')">+ Inject Tooth Mark</button>
+                <button class="dev-btn" onclick="injectMockSymptom('Ecchymosis')">+ Inject Ecchymosis</button>
+            </div>
         </div>
 
         <div id="state-results" class="panel-state" style="justify-content: flex-start; width: 100%;">
@@ -130,25 +148,26 @@
 <script>
     // --- 1. DICTIONARY ---
     const symptomDictionary = {
+     const symptomDictionary = {
         "Crack": { 
-            title: "Crack Detected", 
-            definition: "A structural discontinuity indicating severe material stress.",
-            recommendation: "Immediate stabilization is recommended. Avoid applying pressure."
+            title: "Fissure / Crack Detected", 
+            definition: "Visible fissures or deep grooves on the tongue's mucosal surface. In TCM, this can indicate metabolic heat or fluid depletion.",
+            recommendation: "Anomaly flagged. Please consult a healthcare professional or TCM practitioner for a clinical evaluation."
         },
         "Thick Fur": { 
-            title: "Thick Fur Detected", 
-            definition: "Dense hair accumulation noted in the scanned area.",
-            recommendation: "Ensure area is clean. May require trimming for better visibility of underlying skin."
+            title: "Thick Fur (Coating) Detected", 
+            definition: "A heavy, dense white or yellowish microbial coating on the tongue. Frequently associated in clinical literature with metabolic syndrome or digestive distress.",
+            recommendation: "Anomaly flagged. Please consult a healthcare professional or TCM practitioner for a clinical evaluation."
         },
-        "Tooth Mark": { 
-            title: "Tooth Mark Detected", 
-            definition: "Surface indentation or puncture consistent with a bite.",
-            recommendation: "Clean area with antiseptic. Monitor closely for signs of infection."
+        "Toothmark": { 
+            title: "Toothmark (Scalloped Edge) Detected", 
+            definition: "Wavy indentations along the lateral borders of the tongue, typically caused by tongue swelling pressing against the teeth.",
+            recommendation: "Anomaly flagged. Please consult a healthcare professional or TCM practitioner for a clinical evaluation."
         },
         "Ecchymosis": { 
             title: "Ecchymosis Detected", 
-            definition: "Irregular pigmentation indicating potential bruising or pooling of blood.",
-            recommendation: "Apply a cold compress to reduce swelling. Rest the affected area."
+            definition: "Dark red or purplish discolored patches on the tongue indicating potential microvascular blood stasis or poor circulation.",
+            recommendation: "Anomaly flagged. Please consult a healthcare professional or TCM practitioner for a clinical evaluation."
         }
     };
 
@@ -176,6 +195,10 @@
     const scanStatus = document.getElementById('scan-status');
     const resultsList = document.getElementById('results-list');
     const resultsHeader = document.getElementById('results-header');
+    
+    // Dev Elements
+    const devToggle = document.getElementById('dev-toggle');
+    const devControls = document.getElementById('dev-controls');
 
     let classifier = null, modelProps = null;
     const offscreenCanvas = document.createElement('canvas');
@@ -193,7 +216,6 @@
         
         if(newState !== 'SCANNING') ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Toggle the Snapshot over the Camera Feed
         if (newState === 'RESULTS' && lastSnapshotURL) {
             visionSnapshot.src = lastSnapshotURL;
             visionSnapshot.style.display = 'block';
@@ -216,6 +238,13 @@
         scanStatus.innerText = "Looking for anomalies...";
         scanStatus.style.color = "#ff9800";
 
+        // Show/Hide the Developer Mock buttons based on the checkbox
+        if (devToggle.checked) {
+            devControls.style.display = 'flex';
+        } else {
+            devControls.style.display = 'none';
+        }
+
         inactivityTimer = setInterval(() => {
             secondsSinceLastFind++;
             if (secondsSinceLastFind >= AUTO_STOP_SECONDS) {
@@ -225,8 +254,22 @@
         }, 1000);
     }
 
+    // NEW FUNCTION: Developer Mock Injection
+    function injectMockSymptom(label) {
+        if (currentAppState !== 'SCANNING') return;
+        
+        if (!recordedSymptoms.has(label)) {
+            recordedSymptoms.add(label);
+            captureSnapshot(); // Takes a real snapshot of whatever the camera is currently seeing
+            secondsSinceLastFind = 0; // Resets the 4-second auto-stop timer
+            
+            scanStatus.innerText = `[DEV MOCK] Logged: ${label}`;
+            scanStatus.style.color = "#00bcd4"; // Cyan color to clearly indicate it was faked
+        }
+    }
+
     function finishScreening() {
-        switchState('RESULTS'); // This automatically brings up the snapshot image!
+        switchState('RESULTS'); 
         
         resultsList.innerHTML = ''; 
         resultsList.style.display = 'none'; 
@@ -288,12 +331,10 @@
         snapCanvas.height = video.videoHeight;
         const snapCtx = snapCanvas.getContext('2d');
         
-        // Grab square dimensions to match the UI
         const minVid = Math.min(video.videoWidth, video.videoHeight);
         const sx = (video.videoWidth - minVid) / 2;
         const sy = (video.videoHeight - minVid) / 2;
         
-        // Draw the cropped video and the overlay so it matches exactly what the user saw
         snapCtx.drawImage(video, sx, sy, minVid, minVid, 0, 0, snapCanvas.width, snapCanvas.height);
         snapCtx.drawImage(canvas, 0, 0, snapCanvas.width, snapCanvas.height);
         
@@ -309,7 +350,6 @@
         link.click();
         document.body.removeChild(link);
         
-        // Return to IDLE mode, automatically restoring the camera feed
         setTimeout(() => {
             resetToIdle();
         }, 1500);
