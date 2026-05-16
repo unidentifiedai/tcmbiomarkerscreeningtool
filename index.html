@@ -56,6 +56,17 @@
             width: 100%; text-align: left; margin-bottom: 15px; 
             flex-grow: 1; overflow-y: auto; 
             padding-right: 5px; 
+        }/* Snapshot Image Fixes for Desktop & Mobile */
+        #snapshot-preview {
+            width: 100%;
+            max-width: 350px; /* Keeps it matching the camera box width */
+            max-height: 180px; /* Prevents it from taking up the whole screen */
+            object-fit: contain; /* Stops the image from stretching or squishing */
+            margin: 0 auto 15px auto; /* Centers it perfectly */
+            border-radius: 12px;
+            display: none; /* Hidden by default */
+            border: 2px solid #333;
+            background: #000; /* Adds letterboxing for wide images */
         }
         
         #results-list::-webkit-scrollbar { width: 6px; }
@@ -98,9 +109,9 @@
         <div id="state-results" class="panel-state" style="justify-content: flex-start;">
             <h2 id="results-header">Screening Complete</h2>
             
-            <img id="snapshot-preview" style="width: 100%; border-radius: 12px; margin-bottom: 15px; display: none; border: 2px solid #333;" />
-            <button id="btn-save-image" class="primary-btn" onclick="downloadSnapshot()" style="background-color: #4CAF50; display: none; margin-top: 0; margin-bottom: 15px;">💾 Save Scan Image</button>
-
+           <img id="snapshot-preview" />
+            <button id="btn-save-image" class="primary-btn" onclick="downloadSnapshot()" style="background-color: #4CAF50; display: none; margin: 0 auto 15px auto;">💾 Save Scan Image</button>
+            
             <div id="results-list">
                 </div>
             <button class="primary-btn" onclick="resetToIdle()" style="background-color: #333;">Start New Scan</button>
