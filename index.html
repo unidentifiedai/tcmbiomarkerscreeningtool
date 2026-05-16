@@ -15,7 +15,7 @@
             justify-content: space-between; background-color: #0a0a0a; 
         }
         
-        /* Camera Container */
+        /* Camera & Snapshot Container */
         #vision-container { 
             position: relative; width: 90vw; max-width: 350px; aspect-ratio: 1 / 1; 
             margin: auto; border-radius: 16px; background: #111; overflow: hidden; 
@@ -24,10 +24,16 @@
         video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 10; pointer-events: none; }
         
+        /* NEW: The Snapshot Overlay that hides the live feed */
+        #vision-snapshot {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            object-fit: cover; z-index: 20; display: none; background: #000;
+        }
+
         /* Interactive Info Panel */
         #info-panel { 
             height: 48%; 
-            background: #1e1e24; z-index: 20; border-top-left-radius: 24px; 
+            background: #1e1e24; z-index: 30; border-top-left-radius: 24px; 
             border-top-right-radius: 24px; box-shadow: 0 -4px 20px rgba(0,0,0,0.6); 
             padding: 20px 24px 30px 24px; 
             box-sizing: border-box; display: flex; flex-direction: column; 
@@ -51,18 +57,14 @@
 
         #scan-status { font-size: 1.4rem; font-weight: bold; color: #ff9800; margin: 10px 0; min-height: 30px; }
         
-        /* Snapshot Image Fixes for Desktop & Mobile */
-        #snapshot-preview {
-            width: 100%; max-width: 350px; max-height: 160px; 
-            object-fit: contain; margin: 0 auto 15px auto; 
-            border-radius: 12px; display: none; border: 2px solid #333; background: #000; 
-        }
+        /* Action Button Container */
+        .action-buttons { display: flex; flex-direction: column; gap: 10px; width: 100%; align-items: center; margin-bottom: 10px; }
 
         /* Scrollable Results List */
         #results-list { 
-            width: 100%; text-align: left; margin-bottom: 15px; 
+            width: 100%; text-align: left; margin-bottom: 5px; 
             flex-grow: 1; overflow-y: auto; 
-            padding-right: 5px; display: none; /* Hidden by default now */
+            padding-right: 5px; display: none; /* Hidden by default */
         }
         
         #results-list::-webkit-scrollbar { width: 6px; }
@@ -81,6 +83,7 @@
     <div id="vision-container">
         <video id="camera-feed" autoplay playsinline muted></video>
         <canvas id="overlay-canvas"></canvas>
+        <img id="vision-snapshot" />
     </div>
 
     <div id="info-panel">
@@ -102,18 +105,17 @@
             <div id="scan-status">Looking for symptoms...</div>
         </div>
 
-        <div id="state-results" class="panel-state" style="justify-content: flex-start;">
+        <div id="state-results" class="panel-state" style="justify-content: flex-start; width: 100%;">
             <h2 id="results-header">Screening Complete</h2>
             
-            <img id="snapshot-preview" />
-            <button id="btn-save-image" class="primary-btn" onclick="downloadSnapshot()" style="background-color: #4CAF50; display: none; margin: 0 auto 10px auto; padding: 10px 20px; font-size: 1.1rem;">💾 Save Scan Image</button>
-
-            <button id="btn-view-report" class="primary-btn" onclick="showReport()" style="background-color: #ff9800; display: none; margin: 0 auto 15px auto; padding: 10px 20px; font-size: 1.1rem;">📄 View Symptom Report</button>
+            <div class="action-buttons" id="action-buttons-container">
+                <button id="btn-view-report" class="primary-btn" onclick="showReport()" style="background-color: #ff9800; margin: 0;">📄 View Symptom Report</button>
+                <button id="btn-save-image" class="primary-btn" onclick="downloadSnapshot()" style="background-color: #4CAF50; margin: 0;">💾 Save Image & Finish</button>
+                <button id="btn-discard" class="primary-btn" onclick="resetToIdle()" style="background-color: #333; margin: 0; font-size: 1rem; padding: 10px;">Discard & Scan Again</button>
+            </div>
 
             <div id="results-list">
                 </div>
-            
-            <button class="primary-btn" onclick="resetToIdle()" style="background-color: #333; margin-top: auto;">Start New Scan</button>
         </div>
 
     </div>
@@ -165,6 +167,7 @@
     const video = document.getElementById('camera-feed');
     const canvas = document.getElementById('overlay-canvas');
     const ctx = canvas.getContext('2d');
+    const visionSnapshot = document.getElementById('vision-snapshot');
     
     const panelInit = document.getElementById('state-init');
     const panelIdle = document.getElementById('state-idle');
@@ -189,6 +192,14 @@
         if(newState === 'RESULTS') panelResults.classList.add('active-state');
         
         if(newState !== 'SCANNING') ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Toggle the Snapshot over the Camera Feed
+        if (newState === 'RESULTS' && lastSnapshotURL) {
+            visionSnapshot.src = lastSnapshotURL;
+            visionSnapshot.style.display = 'block';
+        } else {
+            visionSnapshot.style.display = 'none';
+        }
     }
 
     function resetToIdle() {
@@ -215,13 +226,14 @@
     }
 
     function finishScreening() {
-        switchState('RESULTS');
-        resultsList.innerHTML = ''; 
-        resultsList.style.display = 'none'; // Ensure the list is hidden when results first load
+        switchState('RESULTS'); // This automatically brings up the snapshot image!
         
-        const previewImg = document.getElementById('snapshot-preview');
-        const saveBtn = document.getElementById('btn-save-image');
-        const reportBtn = document.getElementById('btn-view-report');
+        resultsList.innerHTML = ''; 
+        resultsList.style.display = 'none'; 
+        
+        const btnView = document.getElementById('btn-view-report');
+        const btnSave = document.getElementById('btn-save-image');
+        const btnDiscard = document.getElementById('btn-discard');
 
         if (recordedSymptoms.size === 0) {
             resultsHeader.innerText = "No Anomalies Detected";
@@ -229,21 +241,18 @@
             resultsHeader.style.color = "#4CAF50";
             resultsList.innerHTML = `<p style="text-align:center;">The AI did not detect any concerning markers during the scan.</p>`;
             
-            resultsList.style.display = 'block'; // Unhide text immediately if nothing was found
-            previewImg.style.display = 'none';
-            saveBtn.style.display = 'none';
-            reportBtn.style.display = 'none';
+            resultsList.style.display = 'block'; 
+            btnView.style.display = 'none';
+            btnSave.style.display = 'none';
+            btnDiscard.innerText = "Start New Scan";
         } else {
             resultsHeader.innerText = "Anomalies Identified";
             resultsHeader.className = "";
             resultsHeader.style.color = "#f44336";
             
-            if (lastSnapshotURL) {
-                previewImg.src = lastSnapshotURL;
-                previewImg.style.display = 'block';
-                saveBtn.style.display = 'block';
-                reportBtn.style.display = 'block'; // Show the "View Report" button
-            }
+            btnView.style.display = 'block';
+            btnSave.style.display = 'block';
+            btnDiscard.innerText = "Discard & Scan Again";
             
             recordedSymptoms.forEach(symptomKey => {
                 const data = symptomDictionary[symptomKey] || {
@@ -264,16 +273,12 @@
         }
     }
 
-    // NEW FUNCTION: Reveals the hidden report
     function showReport() {
         const resultsList = document.getElementById('results-list');
-        const reportBtn = document.getElementById('btn-view-report');
+        const btnView = document.getElementById('btn-view-report');
         
-        resultsList.style.display = 'block'; // Unhide the text
-        reportBtn.style.display = 'none';    // Hide the button
-        
-        // Smoothly scroll down so the user sees the definitions
-        resultsList.scrollIntoView({ behavior: "smooth" });
+        resultsList.style.display = 'block'; 
+        btnView.style.display = 'none';    
     }
 
     // --- 5. SNAPSHOT LOGIC ---
@@ -283,7 +288,13 @@
         snapCanvas.height = video.videoHeight;
         const snapCtx = snapCanvas.getContext('2d');
         
-        snapCtx.drawImage(video, 0, 0, snapCanvas.width, snapCanvas.height);
+        // Grab square dimensions to match the UI
+        const minVid = Math.min(video.videoWidth, video.videoHeight);
+        const sx = (video.videoWidth - minVid) / 2;
+        const sy = (video.videoHeight - minVid) / 2;
+        
+        // Draw the cropped video and the overlay so it matches exactly what the user saw
+        snapCtx.drawImage(video, sx, sy, minVid, minVid, 0, 0, snapCanvas.width, snapCanvas.height);
         snapCtx.drawImage(canvas, 0, 0, snapCanvas.width, snapCanvas.height);
         
         lastSnapshotURL = snapCanvas.toDataURL('image/jpeg', 0.9);
@@ -298,7 +309,7 @@
         link.click();
         document.body.removeChild(link);
         
-        // NEW LOGIC: Wait 1.5 seconds to let the download start, then reset the app automatically!
+        // Return to IDLE mode, automatically restoring the camera feed
         setTimeout(() => {
             resetToIdle();
         }, 1500);
