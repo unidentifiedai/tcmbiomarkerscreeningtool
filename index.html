@@ -51,22 +51,18 @@
 
         #scan-status { font-size: 1.4rem; font-weight: bold; color: #ff9800; margin: 10px 0; min-height: 30px; }
         
+        /* Snapshot Image Fixes for Desktop & Mobile */
+        #snapshot-preview {
+            width: 100%; max-width: 350px; max-height: 160px; 
+            object-fit: contain; margin: 0 auto 15px auto; 
+            border-radius: 12px; display: none; border: 2px solid #333; background: #000; 
+        }
+
         /* Scrollable Results List */
         #results-list { 
             width: 100%; text-align: left; margin-bottom: 15px; 
             flex-grow: 1; overflow-y: auto; 
-            padding-right: 5px; 
-        }/* Snapshot Image Fixes for Desktop & Mobile */
-        #snapshot-preview {
-            width: 100%;
-            max-width: 350px; /* Keeps it matching the camera box width */
-            max-height: 180px; /* Prevents it from taking up the whole screen */
-            object-fit: contain; /* Stops the image from stretching or squishing */
-            margin: 0 auto 15px auto; /* Centers it perfectly */
-            border-radius: 12px;
-            display: none; /* Hidden by default */
-            border: 2px solid #333;
-            background: #000; /* Adds letterboxing for wide images */
+            padding-right: 5px; display: none; /* Hidden by default now */
         }
         
         #results-list::-webkit-scrollbar { width: 6px; }
@@ -109,12 +105,15 @@
         <div id="state-results" class="panel-state" style="justify-content: flex-start;">
             <h2 id="results-header">Screening Complete</h2>
             
-           <img id="snapshot-preview" />
-            <button id="btn-save-image" class="primary-btn" onclick="downloadSnapshot()" style="background-color: #4CAF50; display: none; margin: 0 auto 15px auto;">💾 Save Scan Image</button>
-            
+            <img id="snapshot-preview" />
+            <button id="btn-save-image" class="primary-btn" onclick="downloadSnapshot()" style="background-color: #4CAF50; display: none; margin: 0 auto 10px auto; padding: 10px 20px; font-size: 1.1rem;">💾 Save Scan Image</button>
+
+            <button id="btn-view-report" class="primary-btn" onclick="showReport()" style="background-color: #ff9800; display: none; margin: 0 auto 15px auto; padding: 10px 20px; font-size: 1.1rem;">📄 View Symptom Report</button>
+
             <div id="results-list">
                 </div>
-            <button class="primary-btn" onclick="resetToIdle()" style="background-color: #333;">Start New Scan</button>
+            
+            <button class="primary-btn" onclick="resetToIdle()" style="background-color: #333; margin-top: auto;">Start New Scan</button>
         </div>
 
     </div>
@@ -155,7 +154,7 @@
     let currentAppState = 'INIT'; 
     let recordedSymptoms = new Set(); 
     let symptomFrames = {};           
-    let lastSnapshotURL = null; // Stores the captured image
+    let lastSnapshotURL = null; 
     
     let inactivityTimer = null;
     let secondsSinceLastFind = 0;
@@ -218,9 +217,11 @@
     function finishScreening() {
         switchState('RESULTS');
         resultsList.innerHTML = ''; 
+        resultsList.style.display = 'none'; // Ensure the list is hidden when results first load
         
         const previewImg = document.getElementById('snapshot-preview');
         const saveBtn = document.getElementById('btn-save-image');
+        const reportBtn = document.getElementById('btn-view-report');
 
         if (recordedSymptoms.size === 0) {
             resultsHeader.innerText = "No Anomalies Detected";
@@ -228,8 +229,10 @@
             resultsHeader.style.color = "#4CAF50";
             resultsList.innerHTML = `<p style="text-align:center;">The AI did not detect any concerning markers during the scan.</p>`;
             
+            resultsList.style.display = 'block'; // Unhide text immediately if nothing was found
             previewImg.style.display = 'none';
             saveBtn.style.display = 'none';
+            reportBtn.style.display = 'none';
         } else {
             resultsHeader.innerText = "Anomalies Identified";
             resultsHeader.className = "";
@@ -239,12 +242,13 @@
                 previewImg.src = lastSnapshotURL;
                 previewImg.style.display = 'block';
                 saveBtn.style.display = 'block';
+                reportBtn.style.display = 'block'; // Show the "View Report" button
             }
             
             recordedSymptoms.forEach(symptomKey => {
                 const data = symptomDictionary[symptomKey] || {
                     title: `Detected: "${symptomKey}"`,
-                    definition: "The AI found this symptom, but its exact spelling is missing from your symptomDictionary.",
+                    definition: "The AI found this symptom, but its exact spelling is missing from your dictionary.",
                     recommendation: `Update your code to include exactly: "${symptomKey}"`
                 };
                 
@@ -258,6 +262,18 @@
                 resultsList.innerHTML += html;
             });
         }
+    }
+
+    // NEW FUNCTION: Reveals the hidden report
+    function showReport() {
+        const resultsList = document.getElementById('results-list');
+        const reportBtn = document.getElementById('btn-view-report');
+        
+        resultsList.style.display = 'block'; // Unhide the text
+        reportBtn.style.display = 'none';    // Hide the button
+        
+        // Smoothly scroll down so the user sees the definitions
+        resultsList.scrollIntoView({ behavior: "smooth" });
     }
 
     // --- 5. SNAPSHOT LOGIC ---
@@ -281,6 +297,11 @@
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        
+        // NEW LOGIC: Wait 1.5 seconds to let the download start, then reset the app automatically!
+        setTimeout(() => {
+            resetToIdle();
+        }, 1500);
     }
 
     // --- 6. AI INITIALIZATION & CAMERA ---
