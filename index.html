@@ -98,6 +98,10 @@
 
         <div id="state-results" class="panel-state" style="justify-content: flex-start;">
             <h2 id="results-header">Screening Complete</h2>
+            
+            <img id="snapshot-preview" style="width: 100%; border-radius: 12px; margin-bottom: 15px; display: none; border: 2px solid #333;" />
+            <button id="btn-save-image" class="primary-btn" onclick="downloadSnapshot()" style="background-color: #4CAF50; display: none; margin-top: 0;">💾 Save Scan Image</button>
+            
             <div id="results-list">
                 </div>
             <button class="primary-btn" onclick="resetToIdle()" style="background-color: #333;">Start New Scan</button>
