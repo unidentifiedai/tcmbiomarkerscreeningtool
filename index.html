@@ -20,7 +20,6 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8); border: 2px solid #333; 
         }
         
-        /* Added transform-origin to ensure zooming stays perfectly centered */
         video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: center center; }
         canvas { z-index: 10; pointer-events: none; }
         
@@ -29,7 +28,6 @@
             object-fit: contain; z-index: 20; display: none; background: #000;
         }
 
-        /* NEW: Zoom Slider UI */
         #zoom-controls {
             position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
             z-index: 25; display: none; align-items: center; gap: 10px;
@@ -56,8 +54,14 @@
             width: 100%; max-width: 300px; margin: 6px auto; flex-shrink: 0; 
         }
         .primary-btn:active { transform: scale(0.96); }
+        
+        /* NEW Capture Button Styling */
+        #btn-capture {
+            background-color: #f44336; box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4);
+            font-size: 1.3rem; padding: 20px 30px; margin-top: 15px;
+        }
 
-        #scan-status { font-size: 1.4rem; font-weight: bold; color: #ff9800; margin: 10px 0; min-height: 30px; }
+        #scan-status { font-size: 1.1rem; font-weight: bold; color: #ff9800; margin: 5px 0; min-height: 30px; }
         
         .dev-toggle-container { margin-top: 15px; font-size: 0.9rem; color: #888; display: flex; align-items: center; gap: 8px; }
         input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
@@ -77,7 +81,7 @@
         .result-rec { font-size: 0.95rem; color: #4CAF50; margin: 0; font-weight: bold; }
         .all-clear { color: #4CAF50 !important; }
         
-        #scan-id-display { font-size: 0.9rem; color: #aaa; margin-bottom: 10px; font-family: monospace; }
+        #scan-id-display { font-size: 0.9rem; color: #aaa; margin-bottom: 5px; font-family: monospace; }
         
         .btn-row { display: flex; gap: 10px; width: 100%; max-width: 300px; margin-top: 10px; }
         .btn-row .primary-btn { margin-top: 0; padding: 15px 10px; font-size: 1.1rem; }
@@ -124,10 +128,11 @@
         </div>
 
         <div id="state-scanning" class="panel-state">
-            <h2 style="color: #ff9800;">Scanning Active</h2>
+            <h2 style="color: #ff9800;">Aiming Mode</h2>
             <div id="scan-id-display"></div>
-            <p>Analyzing surface data...</p>
-            <div id="scan-status">Looking for symptoms...</div>
+            <div id="scan-status">Align subject and press capture.</div>
+            
+            <button id="btn-capture" class="primary-btn" onclick="triggerCapture()">📸 Capture & Analyze</button>
 
             <div id="dev-controls">
                 <button class="dev-btn" onclick="injectMockSymptom('Crack')">+ Crack</button>
@@ -161,7 +166,7 @@
 
 <script>
     // --- 1. DICTIONARY ---
-     const symptomDictionary = {
+ const symptomDictionary = {
         "Crack": { 
             title: "Fissure / Crack Detected", 
             definition: "Visible fissures or deep grooves on the tongue's mucosal surface. Clinical literature associates this with metabolic heat or fluid depletion.",
@@ -187,19 +192,12 @@
     // --- 2. DYNAMIC APP STATE & DATABASES ---
     let currentAppState = 'INIT'; 
     let recordedSymptoms = new Set(); 
-    let symptomFrames = {};           
     let lastSnapshotURL = null; 
-    let isLiveScanning = false; 
-    
-    // NEW: Zoom Variable
     let currentZoom = 1.0;
-    
-    let inactivityTimer = null;
-    let secondsSinceLastFind = 0;
-    const AUTO_STOP_SECONDS = 4;      
-    const CONFIRMATION_FRAMES = 10;   
-
     let currentScanID = "";
+    
+    // Timer variables completely removed to match the ESP32 workflow!
+
     let sessionHistory = JSON.parse(localStorage.getItem('medicalScanLog')) || []; 
 
     const video = document.getElementById('camera-feed');
@@ -214,6 +212,7 @@
     const panelScanning = document.getElementById('state-scanning');
     const panelResults = document.getElementById('state-results');
     const scanStatus = document.getElementById('scan-status');
+    const btnCapture = document.getElementById('btn-capture');
     const resultsList = document.getElementById('results-list');
     const resultsHeader = document.getElementById('results-header');
     
@@ -236,15 +235,10 @@
         
         if(newState !== 'SCANNING') {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            isLiveScanning = false; 
         }
 
-        // Show zoom slider only during IDLE or SCANNING
-        if (newState === 'IDLE' || newState === 'SCANNING') {
-            zoomControls.style.display = 'flex';
-        } else {
-            zoomControls.style.display = 'none';
-        }
+        if (newState === 'IDLE' || newState === 'SCANNING') zoomControls.style.display = 'flex';
+        else zoomControls.style.display = 'none';
 
         if (newState === 'RESULTS' && lastSnapshotURL) {
             visionSnapshot.src = lastSnapshotURL;
@@ -257,43 +251,85 @@
     function resetToIdle() {
         switchState('IDLE');
         document.getElementById('file-upload').value = ''; 
-        // Automatically zoom back out when returning to IDLE
         zoomSlider.value = 1.0;
         updateZoom(1.0);
     }
 
-    // NEW FUNCTION: Handle the Zoom Slider
     function updateZoom(val) {
         currentZoom = parseFloat(val);
-        // Visually scale up the camera and canvas
         video.style.transform = `scale(${currentZoom})`;
         canvas.style.transform = `scale(${currentZoom})`;
     }
 
-    // --- 4. SMART SCREENING LOGIC ---
+    // --- 4. POINT-AND-SHOOT LOGIC ---
     function startScreening() {
         switchState('SCANNING');
-        isLiveScanning = true;
         recordedSymptoms.clear();
-        symptomFrames = {}; 
         lastSnapshotURL = null; 
-        secondsSinceLastFind = 0;
         
         currentScanID = "LIVE-" + Math.random().toString(36).substr(2, 5).toUpperCase();
         document.getElementById('scan-id-display').innerText = `ID: ${currentScanID}`;
-        scanStatus.innerText = "Looking for anomalies...";
+        scanStatus.innerText = "Align subject and press capture.";
         scanStatus.style.color = "#ff9800";
+        btnCapture.style.display = 'block';
 
         if (devToggle.checked) devControls.style.display = 'flex';
         else devControls.style.display = 'none';
+    }
 
-        inactivityTimer = setInterval(() => {
-            secondsSinceLastFind++;
-            if (secondsSinceLastFind >= AUTO_STOP_SECONDS) {
-                clearInterval(inactivityTimer);
+    // NEW FUNCTION: The Freeze and Think
+    function triggerCapture() {
+        if (currentAppState !== 'SCANNING') return;
+
+        // UI Feedback: Hide button, show analyzing text
+        btnCapture.style.display = 'none';
+        devControls.style.display = 'none';
+        scanStatus.innerText = "Analyzing frame... Please wait.";
+        scanStatus.style.color = "#00bcd4";
+
+        // Slight delay allows the browser UI to update the text before the AI locks the CPU
+        setTimeout(() => {
+            const minVid = Math.min(video.videoWidth, video.videoHeight);
+            const cropSize = minVid / currentZoom;
+            const sx = (video.videoWidth - cropSize) / 2; 
+            const sy = (video.videoHeight - cropSize) / 2;
+            
+            offscreenCtx.drawImage(video, sx, sy, cropSize, cropSize, 0, 0, modelProps.input_width, modelProps.input_height);
+            const imgData = offscreenCtx.getImageData(0, 0, modelProps.input_width, modelProps.input_height);
+            let features = [];
+            for (let i = 0; i < imgData.data.length; i += 4) features.push((imgData.data[i] << 16) | (imgData.data[i+1] << 8) | imgData.data[i+2]);
+
+            try {
+                const res = classifier.classify(features);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                if (res.results && res.results.length > 0) {
+                    const topResult = res.results.reduce((prev, current) => (prev.value > current.value) ? prev : current);
+                    
+                    // Trigger if confidence is above 50% (No debounce needed for static frame!)
+                    if (topResult.value >= 0.5) {
+                        recordedSymptoms.add(topResult.label);
+
+                        const scaleX = cropSize / modelProps.input_width; 
+                        const scaleY = cropSize / modelProps.input_height;
+                        const scaledX = sx + (topResult.x * scaleX); 
+                        const scaledY = sy + (topResult.y * scaleY);
+
+                        ctx.strokeStyle = '#00FF00'; ctx.lineWidth = Math.max(2, 4 / currentZoom);
+                        ctx.strokeRect(scaledX, scaledY, topResult.width * scaleX, topResult.height * scaleY);
+                        ctx.fillStyle = '#00FF00'; ctx.font = `bold ${Math.floor(24 / currentZoom)}px Arial`;
+                        ctx.fillText(topResult.label, scaledX, scaledY - Math.floor(10 / currentZoom));
+                    }
+                }
+
+                // Proceed to output exactly like the ESP32
+                captureSnapshot();
                 finishScreening();
+            } catch (e) {
+                alert("Error during classification.");
+                resetToIdle();
             }
-        }, 1000);
+        }, 50); 
     }
 
     function injectMockSymptom(label) {
@@ -301,18 +337,18 @@
         if (!recordedSymptoms.has(label)) {
             recordedSymptoms.add(label);
             captureSnapshot(); 
-            secondsSinceLastFind = 0; 
-            scanStatus.innerText = `[DEV MOCK] Logged: ${label}`;
-            scanStatus.style.color = "#00bcd4"; 
+            finishScreening(); 
         }
     }
 
+    // STATIC UPLOAD LOGIC
     document.getElementById('file-upload').addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
 
         switchState('SCANNING');
-        zoomControls.style.display = 'none'; // Hide zoom slider during static upload process
+        zoomControls.style.display = 'none'; 
+        btnCapture.style.display = 'none';
         scanStatus.innerText = "Analyzing uploaded image...";
         currentScanID = "UPLD-" + Math.random().toString(36).substr(2, 5).toUpperCase();
         document.getElementById('scan-id-display').innerText = `ID: ${currentScanID}`;
@@ -341,8 +377,6 @@
 
         try {
             const res = classifier.classify(features);
-            
-            // Standardize uploaded images to a clean 600x600 square exactly like the UI
             const snapCanvas = document.createElement('canvas');
             snapCanvas.width = 600; snapCanvas.height = 600;
             const snapCtx = snapCanvas.getContext('2d');
@@ -352,7 +386,6 @@
                 const topResult = res.results.reduce((prev, current) => (prev.value > current.value) ? prev : current);
                 if (topResult.value >= 0.5) {
                     recordedSymptoms.add(topResult.label);
-                    
                     const scaleX = 600 / modelProps.input_width;
                     const scaleY = 600 / modelProps.input_height;
                     const scaledX = topResult.x * scaleX; const scaledY = topResult.y * scaleY;
@@ -410,21 +443,17 @@
         document.getElementById('btn-view-report').style.display = 'none';    
     }
 
-    // --- 5. IMAGE SAVING & LOCAL STORAGE LOGGING ---
     function captureSnapshot() {
         const snapCanvas = document.createElement('canvas');
-        snapCanvas.width = 600; snapCanvas.height = 600; // Standardize to high-res 600x600 square
+        snapCanvas.width = 600; snapCanvas.height = 600; 
         const snapCtx = snapCanvas.getContext('2d');
         
         const minVid = Math.min(video.videoWidth, video.videoHeight);
-        // NEW: Calculate the crop area based on the current zoom level!
         const cropSize = minVid / currentZoom;
         const sx = (video.videoWidth - cropSize) / 2; 
         const sy = (video.videoHeight - cropSize) / 2;
         
-        // Draw the natively zoomed-in portion of the video to the 600x600 canvas
         snapCtx.drawImage(video, sx, sy, cropSize, cropSize, 0, 0, 600, 600);
-        // Draw the canvas layer (which has the bounding boxes) perfectly over it
         snapCtx.drawImage(canvas, sx, sy, cropSize, cropSize, 0, 0, 600, 600);
         
         lastSnapshotURL = snapCanvas.toDataURL('image/jpeg', 0.9);
@@ -432,7 +461,6 @@
 
     function downloadSnapshot() {
         if (!lastSnapshotURL) return;
-        
         const link = document.createElement('a');
         link.href = lastSnapshotURL;
         link.download = `${currentScanID}.jpg`; 
@@ -443,7 +471,6 @@
         const now = new Date();
         sessionHistory.push({ id: currentScanID, date: now.toLocaleDateString(), time: now.toLocaleTimeString(), symptoms: Array.from(recordedSymptoms).join(" + ") });
         localStorage.setItem('medicalScanLog', JSON.stringify(sessionHistory));
-        
         setTimeout(() => resetToIdle(), 1500);
     }
 
@@ -452,14 +479,10 @@
             alert("Your log is empty! Save an image result first.");
             return;
         }
-
-        let csvContent = "data:text/csv;charset=utf-8,";
-        csvContent += "Scan ID,Date,Time,Symptoms Detected\n";
-
+        let csvContent = "data:text/csv;charset=utf-8,Scan ID,Date,Time,Symptoms Detected\n";
         sessionHistory.forEach(record => {
             csvContent += `${record.id},${record.date},${record.time},"${record.symptoms}"\n`;
         });
-
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
@@ -477,7 +500,7 @@
         }
     }
 
-    // --- 6. AI INITIALIZATION & INFERENCE ---
+    // --- 6. AI INITIALIZATION ---
     async function initAI() {
         const debugText = document.querySelector('#state-init p');
         try {
@@ -496,7 +519,7 @@
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
             video.srcObject = stream;
             video.onloadedmetadata = async () => {
-                try { await video.play(); resizeCanvas(); switchState('IDLE'); requestAnimationFrame(inferenceLoop); } 
+                try { await video.play(); resizeCanvas(); switchState('IDLE'); } 
                 catch (e) { panelInit.innerHTML = `<h2 style="color:red;">Playback Blocked</h2>`; }
             };
         } catch (err) { panelInit.innerHTML = `<h2 style="color:red;">Camera Denied</h2>`; }
@@ -505,63 +528,8 @@
     function resizeCanvas() { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
     window.addEventListener('resize', resizeCanvas);
 
-    function inferenceLoop() {
-        if (!classifier || !modelProps) return requestAnimationFrame(inferenceLoop);
-
-        if (currentAppState === 'SCANNING' && isLiveScanning) {
-            const minVid = Math.min(video.videoWidth, video.videoHeight);
-            
-            // NEW: Instruct the AI to only look at the physically zoomed-in crop area!
-            const cropSize = minVid / currentZoom;
-            const sx = (video.videoWidth - cropSize) / 2; 
-            const sy = (video.videoHeight - cropSize) / 2;
-            
-            offscreenCtx.drawImage(video, sx, sy, cropSize, cropSize, 0, 0, modelProps.input_width, modelProps.input_height);
-            
-            const imgData = offscreenCtx.getImageData(0, 0, modelProps.input_width, modelProps.input_height);
-            let features = [];
-            for (let i = 0; i < imgData.data.length; i += 4) features.push((imgData.data[i] << 16) | (imgData.data[i+1] << 8) | imgData.data[i+2]);
-
-            try {
-                const res = classifier.classify(features);
-                let topResult = null;
-                
-                if (res.results && res.results.length > 0) {
-                    topResult = res.results.reduce((prev, current) => (prev.value > current.value) ? prev : current);
-                    if (topResult.value < 0.6) topResult = null;
-                }
-
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                if (topResult) { 
-                    // NEW: Calculate the box placement relative to the full canvas, compensating for the zoom crop
-                    const scaleX = cropSize / modelProps.input_width; 
-                    const scaleY = cropSize / modelProps.input_height;
-                    const scaledX = sx + (topResult.x * scaleX); 
-                    const scaledY = sy + (topResult.y * scaleY);
-
-                    // Shrink the font and lines relative to the zoom so they don't look massive on screen
-                    ctx.strokeStyle = '#00FF00'; ctx.lineWidth = Math.max(2, 4 / currentZoom);
-                    ctx.strokeRect(scaledX, scaledY, topResult.width * scaleX, topResult.height * scaleY);
-                    ctx.fillStyle = '#00FF00'; ctx.font = `bold ${Math.floor(24 / currentZoom)}px Arial`;
-                    ctx.fillText(topResult.label, scaledX, scaledY - Math.floor(10 / currentZoom));
-
-                    symptomFrames[topResult.label] = (symptomFrames[topResult.label] || 0) + 1;
-
-                    if (symptomFrames[topResult.label] === CONFIRMATION_FRAMES) {
-                        if (!recordedSymptoms.has(topResult.label)) {
-                            recordedSymptoms.add(topResult.label);
-                            captureSnapshot(); 
-                            secondsSinceLastFind = 0; 
-                            scanStatus.innerText = `Logged: ${topResult.label}`;
-                            scanStatus.style.color = "#4CAF50"; 
-                        }
-                    }
-                }
-            } catch (e) { }
-        }
-        requestAnimationFrame(inferenceLoop);
-    }
+    // Notice: inferenceLoop is completely GONE! We save battery and run AI only when triggered.
+    
     setTimeout(initAI, 1000);
 </script>
 </body>
